@@ -1,0 +1,1 @@
+Shorter loading screens for fast travel, respawns and dungeons: about 25-30% less waiting on PC and Steam Deck. The game loads the world one piece at a time and waits an extra second at the end; during the loading screen the mod lets it load in parallel and finish right away.
