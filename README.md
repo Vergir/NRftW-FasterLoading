@@ -6,7 +6,7 @@ A [MelonLoader](https://github.com/LavaGang/MelonLoader) mod for **No Rest for t
 screens of fast travel, respawns and dungeons: about **25-30% shorter** on the trips we measured, on a PC and on
 Steam Deck.
 
-Download: [GitHub releases](https://github.com/vergir/NRftW-FasterLoading/releases/latest)
+Download: [Nexus Mods](https://www.nexusmods.com/norestforthewicked/mods/117) · [GitHub releases](https://github.com/vergir/NRftW-FasterLoading/releases/latest)
 
 ## What it changes
 
