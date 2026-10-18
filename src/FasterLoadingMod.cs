@@ -1,7 +1,7 @@
 using FasterLoading;
 using MelonLoader;
 
-[assembly: MelonInfo(typeof(FasterLoadingMod), "Faster Loading", "1.0.0", "vergir")]
+[assembly: MelonInfo(typeof(FasterLoadingMod), "Faster Loading", "1.1.0", "vergir")]
 [assembly: MelonGame("Moon Studios", "NoRestForTheWicked")]
 // MelonLoader would otherwise apply every [HarmonyPatch] itself, twice with our PatchAll.
 [assembly: HarmonyDontPatchAll]

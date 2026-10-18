@@ -1,6 +1,7 @@
 using HarmonyLib;
 using Il2Cppframeworks;
 using Il2CppMoon.LoadingScreen;
+using Il2CppMoon.Streaming;
 
 namespace FasterLoading.Patches;
 
@@ -29,5 +30,23 @@ internal static class HideLoadingScreenPatch
     {
         try { Speedup.OnHideLoadingScreen(); }
         catch (System.Exception e) { FasterLoadingMod.Log.Error("HideLoadingScreen: " + e); }
+    }
+}
+
+/// <summary>The game's per-frame streaming step (starts at most one load or unload).</summary>
+[HarmonyPatch(typeof(UpdateWorldStreaming), nameof(UpdateWorldStreaming.UpdateStreaming))]
+internal static class UpdateStreamingPatch
+{
+    private static bool _reported;
+
+    private static void Postfix(GameStreamingState state)
+    {
+        try { Speedup.OnUpdateStreaming(state); }
+        catch (System.Exception e)
+        {
+            if (_reported) return;
+            _reported = true;
+            FasterLoadingMod.Log.Error("UpdateStreaming: " + e);
+        }
     }
 }

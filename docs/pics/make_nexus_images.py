@@ -23,10 +23,10 @@ GRID = (255, 255, 255, 34)
 W, H = 1920, 1080
 
 # Seconds of loading screen per trip: the mean of the one-way and the return trip between the same two whispers
-# (Mountain Gate <-> Marketplace), each the average of 2-4 trips (docs/internal.md).
+# (Mountain Gate <-> Marketplace), vanilla and 1.1.0 measured in the same session (docs/internal.md).
 RESULTS = [
-    ("Test PC", "Ryzen 9 5900X \u00b7 RTX 4060 Ti \u00b7 NVMe SSD", 9.72, 7.12),
-    ("Steam Deck", "", 16.06, 11.45),
+    ("Test PC", "Ryzen 9 5900X · RTX 4060 Ti · NVMe SSD", 9.92, 5.43),
+    ("Steam Deck", "", 17.18, 8.68),
 ]
 GLYPH_BOX = (2230, 1060, 2860, 1680)  # the loading glyph in loading.png
 PILLS = ["Fast travel", "Respawn", "Dungeons"]

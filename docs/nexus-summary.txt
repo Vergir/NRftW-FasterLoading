@@ -1,1 +1,1 @@
-Shorter loading screens for fast travel, respawns and dungeons: about 25-30% less waiting on PC and Steam Deck. While the screen is up, the game loads in parallel and skips its extra second of waiting.
+Shorter loading screens for fast travel, respawns and dungeons: about half as long on PC and Steam Deck. While the screen is up, the game loads in parallel, unloads the old area alongside and skips its extra second of waiting.

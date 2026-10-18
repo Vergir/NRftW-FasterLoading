@@ -1,15 +1,16 @@
 using System;
+using System.Runtime.InteropServices;
+using Il2CppInterop.Runtime;
 using Il2Cppframeworks;
 using Il2CppMoon.Streaming;
 using Il2CppMoon.TheLoop;
-using Il2CppMoon.UnloadSceneTimesliced;
 using UnityEngine;
 
 namespace FasterLoading;
 
 /// <summary>
-/// Loosens the game's streaming limits while a teleport loading screen (fast travel, respawn) is up, and restores them
-/// when it hides. See docs/internal.md for the game code behind each lever.
+/// Loosens the game's streaming limits while a teleport loading screen (fast travel, respawn, dungeons) is up, and
+/// restores them when it hides. See docs/internal.md for the game code behind each lever.
 /// <para>Start: the first PlayerTeleportationHandlerQ3.CheckLoadingComplete call, which the game makes every frame from the
 /// moment the screen is fully black until the new area is loaded. End: LoadingScreenAPI.HideLoadingScreen.</para>
 /// </summary>
@@ -24,24 +25,99 @@ internal static class Speedup
     private static float _start, _lastCheck;
 
     private static bool _parallelSet, _savedSequential;
-    private static bool _budgetSet;
-    private static double _savedTotalBudget;
-    private static float _savedUnloadBudget;
+
     private static float _idleWait = GameIdleWait;
-    private static bool _loggedBudget;
+    private static int _idleFramesNeeded;
+    private static float _seenBusyTime = float.NaN; // m_lastStreamingBusyTime as of the previous call
+    private static int _idleFrames;                 // calls in a row that found it unchanged = frames streaming stayed idle
+
+    private static bool _earlyUnload;  // force the old area's unload decision from the start of the screen
+    private static bool _earlyDone;    // streaming went idle once: from here on the game forces it itself
+    private static int _extraUnloads;  // extra unload starts allowed per frame
+
+    // Il2CppInterop cannot read Nullable<struct> fields (its getter crashes), so their HasValue byte is read directly.
+    private static int _heroPositionOffset = -1, _preloadOffset = -1;
+    private static bool _earlyUnloadBroken;
 
     /// <summary>Prefix of CheckLoadingComplete: begin on the first call, then shorten the idle wait.</summary>
     public static void OnCheckLoadingComplete(PlayerTeleportationHandlerQ3 handler)
     {
         _lastCheck = Time.realtimeSinceStartup;
         if (!_active) Begin();
+        if (_earlyUnload && !_earlyDone) ForceUnloadDecision();
         if (_idleWait >= GameIdleWait) return;
 
-        // The game ends the screen once Time.time - m_lastStreamingBusyTime >= 1 s; while streaming is busy it sets the
-        // field to Time.time itself, so moving it back only ever acts on idle frames.
-        float idleFor = Time.time - handler.m_lastStreamingBusyTime;
-        if (idleFor >= _idleWait && idleFor < GameIdleWait)
+        // While streaming is busy the game sets m_lastStreamingBusyTime to Time.time (after this prefix), so an unchanged
+        // value means streaming stayed idle for one more frame.
+        float busyTime = handler.m_lastStreamingBusyTime;
+        if (busyTime == _seenBusyTime) _idleFrames++;
+        else { _seenBusyTime = busyTime; _idleFrames = 0; }
+
+        // The game ends the screen once Time.time - m_lastStreamingBusyTime >= 1 s. The first idle frame also asks for the
+        // old area's unloads, which start a frame or two later and make streaming busy again: the frame minimum keeps one
+        // long frame from ending the wait before they have started.
+        float idleFor = Time.time - busyTime;
+        if (idleFor >= _idleWait && _idleFrames >= _idleFramesNeeded && idleFor < GameIdleWait)
             handler.m_lastStreamingBusyTime = Time.time - GameIdleWait - 0.01f;
+    }
+
+    /// <summary>
+    /// The game unloads a part of the world 10 s after nothing needs it any more, or at once when
+    /// StreamingGraphProcessor.ForceProcessUnloadsOnce is set (read and cleared by the next streaming graph update). It sets
+    /// that on the first frame with nothing left to load, so the old area only starts unloading after the new one is
+    /// loaded. Setting it from the start queues the old area's unloads right away, alongside the loads. Only while the
+    /// destination is the streaming point (TeleportPreloadLocation set, no hero position): then everything outside it
+    /// is the old area. Stops at the first idle frame, where the game takes over.
+    /// </summary>
+    private static void ForceUnloadDecision()
+    {
+        try
+        {
+            var streaming = ViewFrame.Active?.Streaming.Item1;
+            var graph = streaming?.GraphProcessor;
+            var world = streaming?.ActiveStreamingState?.WorldStreaming;
+            if (graph == null || world == null) return;
+            if (!world.Busy) { _earlyDone = true; return; }
+            if (_heroPositionOffset < 0)
+            {
+                _heroPositionOffset = FieldOffset("LocalHeroPosition");
+                _preloadOffset = FieldOffset("TeleportPreloadLocation");
+            }
+            // Nullable<T> starts with its HasValue bool.
+            bool preload = Marshal.ReadByte(graph.Pointer + _preloadOffset) != 0;
+            bool hero = Marshal.ReadByte(graph.Pointer + _heroPositionOffset) != 0;
+            if (preload && !hero) graph.ForceProcessUnloadsOnce = true;
+        }
+        catch (Exception e)
+        {
+            // Leave the game's own timing; the other levers keep working.
+            _earlyUnload = false;
+            if (_earlyUnloadBroken) return;
+            _earlyUnloadBroken = true;
+            FasterLoadingMod.Log.Warning("Early unload switched off: " + e.Message);
+        }
+    }
+
+    private static int FieldOffset(string name)
+    {
+        var field = IL2CPP.GetIl2CppField(Il2CppClassPointerStore<StreamingGraphProcessor>.NativeClassPtr, name);
+        if (field == IntPtr.Zero) throw new MissingFieldException("StreamingGraphProcessor." + name);
+        return (int)IL2CPP.il2cpp_field_get_offset(field);
+    }
+
+    /// <summary>
+    /// Postfix of UpdateWorldStreaming.UpdateStreaming: the game starts at most one load or unload per frame, and an
+    /// unload only on frames without a load to start. During the screen, start up to N more queued unloads right after
+    /// (FinishWorldStreaming handles every payload put on that frame's list). Only with parallel loading on: the game's
+    /// one-at-a-time rule is skipped otherwise.
+    /// </summary>
+    public static void OnUpdateStreaming(GameStreamingState state)
+    {
+        if (!_active || _extraUnloads <= 0 || !_parallelSet || state?.WorldStreaming == null) return;
+        for (int i = 0; i < _extraUnloads; i++)
+        {
+            if (!UpdateWorldStreaming.StartUnloadingPayloads(state.WorldStreaming)) break;
+        }
     }
 
     /// <summary>Postfix of HideLoadingScreen. The game also hides at the start of a teleport (before the screen shows);
@@ -73,32 +149,14 @@ internal static class Speedup
             catch (Exception e) { FasterLoadingMod.Log.Warning("Parallel loading: " + e.Message); }
         }
 
-        float budget = Prefs.WorkBudgetMs.Value;
-        if (budget > 0)
-        {
-            try
-            {
-                var state = ViewFrame.Active?.Timeslicing.Item1;
-                if (state != null)
-                {
-                    _savedTotalBudget = state.TotalFrameBudget;
-                    _savedUnloadBudget = UnloadSceneTimeslicedState.TimesliceBudget;
-                    // Only ever raise: never lower a budget the game (or a future update) set higher.
-                    state.TotalFrameBudget = Math.Max(_savedTotalBudget, budget);
-                    UnloadSceneTimeslicedState.TimesliceBudget = Math.Max(_savedUnloadBudget, budget);
-                    _budgetSet = true;
-                    if (!_loggedBudget)
-                    {
-                        _loggedBudget = true;
-                        FasterLoadingMod.Log.Msg($"Work budget during loading screens: {state.TotalFrameBudget} ms (game: {_savedTotalBudget}), " +
-                                                 $"unloading {UnloadSceneTimeslicedState.TimesliceBudget} ms (game: {_savedUnloadBudget})");
-                    }
-                }
-            }
-            catch (Exception e) { FasterLoadingMod.Log.Warning("Work budget: " + e.Message); }
-        }
-
         _idleWait = Math.Clamp(Prefs.IdleWaitSeconds.Value, 0f, GameIdleWait);
+        _idleFramesNeeded = Math.Max(0, Prefs.IdleWaitFrames.Value);
+        _seenBusyTime = float.NaN;
+        _idleFrames = 0;
+
+        _earlyUnload = Prefs.EarlyUnload.Value && !_earlyUnloadBroken;
+        _earlyDone = false;
+        _extraUnloads = Math.Max(0, Prefs.ExtraUnloadsPerFrame.Value);
     }
 
     private static void End(string why)
@@ -119,18 +177,9 @@ internal static class Speedup
             catch (Exception e) { FasterLoadingMod.Log.Warning("Restoring parallel loading: " + e.Message); }
             _parallelSet = false;
         }
-        if (_budgetSet)
-        {
-            try
-            {
-                var state = ViewFrame.Active?.Timeslicing.Item1;
-                if (state != null) state.TotalFrameBudget = _savedTotalBudget;
-                UnloadSceneTimeslicedState.TimesliceBudget = _savedUnloadBudget;
-            }
-            catch (Exception e) { FasterLoadingMod.Log.Warning("Restoring work budget: " + e.Message); }
-            _budgetSet = false;
-        }
         _idleWait = GameIdleWait;
+        _earlyUnload = false;
+        _extraUnloads = 0;
     }
 
     public static void Shutdown()

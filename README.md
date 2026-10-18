@@ -3,8 +3,8 @@
 ![Faster Loading](docs/pics/nexus/header.jpg)
 
 A [MelonLoader](https://github.com/LavaGang/MelonLoader) mod for **No Rest for the Wicked** that shortens the loading
-screens of fast travel, respawns and dungeons: about **25-30% shorter** on the trips we measured, on a PC and on
-Steam Deck.
+screens of fast travel, respawns and dungeons: **about half as long** on the trips we measured (45% shorter on a PC,
+49% on Steam Deck).
 
 Download: [Nexus Mods](https://www.nexusmods.com/norestforthewicked/mods/117) · [GitHub releases](https://github.com/vergir/NRftW-FasterLoading/releases/latest)
 
@@ -16,10 +16,11 @@ soon as the screen ends:
 
 * **Parallel loading.** The game loads (and unloads) the parts of the world one after another. The mod lets it work on
   several at once.
-* **Faster clean-up of the area you left.** The game unloads it in tiny slices of under 1 ms per frame, to avoid
-  stutter in gameplay. During the loading screen the mod gives it 12 ms per frame.
+* **The area you left unloads at the same time.** The game only starts unloading the area you came from once the new
+  one is loaded, and one piece per frame: 1-2 s at the end of every loading screen on a PC, more on Steam Deck. The mod
+  starts it right away, alongside the loading, and lets up to 9 pieces start per frame.
 * **No extra second at the end.** Once everything is loaded, the game waits a full second of "nothing more to load"
-  before it ends the screen. The mod waits 0.25 s.
+  before it ends the screen. The mod waits 0.1 s (and at least 3 frames).
 
 The game's memory clean-up at the end of a loading screen (about 1 s, at most every 20 s) is left alone on purpose: it
 keeps that pause out of your gameplay.
@@ -31,10 +32,10 @@ averages):
 
 | | Vanilla | With Faster Loading |
 |---|---|---|
-| Test PC, one way | 11.2 | 8.4 |
-| Test PC, back | 8.3 | 5.9 |
-| Steam Deck, one way | 19.4 | 14.1 |
-| Steam Deck, back | 12.7 | 8.8 |
+| Test PC, one way | 11.9 | 6.5 |
+| Test PC, back | 7.9 | 4.3 |
+| Steam Deck, one way | 20.9 | 11.6 |
+| Steam Deck, back | 13.4 | 5.7 |
 
 Test PC: Ryzen 9 5900X, RTX 4060 Ti, NVMe SSD. Your times depend on your PC and on how much of the world has to be
 loaded: long trips gain the most.
@@ -47,8 +48,10 @@ each part can be tuned or switched off in `<game>/UserData/MelonPreferences.cfg`
 | Setting | Default | |
 |---|---|---|
 | `ParallelLoading` | `true` | Load and unload several parts of the world at once. |
-| `WorkBudgetMs` | `12` | Milliseconds per frame for the game's own loading work (game: 1, unloading 0.8). `0` = leave the game's values. |
-| `IdleWaitSeconds` | `0.25` | How long loading must be idle before the screen ends (game: 1). |
+| `EarlyUnload` | `true` | Start unloading the area you left at the start of the loading screen. |
+| `ExtraUnloadsPerFrame` | `8` | Parts of the old area that may start unloading per frame on top of the game's one. `0` = the game's pace. |
+| `IdleWaitSeconds` | `0.1` | How long loading must be idle before the screen ends (game: 1). |
+| `IdleWaitFrames` | `3` | ...and for at least this many frames. |
 | `LogLoadTimes` | `true` | Write the length of every loading screen to the MelonLoader log. |
 
 Each loading screen is logged in `<game>/MelonLoader/Latest.log`, for example `[Faster_Loading] Loading screen: 5.8 s`.
